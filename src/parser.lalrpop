@@ -48,10 +48,10 @@ Function : (Variable, Vec<SimpleTerm>) = {
 SimpleTerm : SimpleTerm = {
     <Const> => SimpleTerm::Symbol(<>),
     <Id> => SimpleTerm::Variable(<>),
-    "_" => SimpleTerm::FreshVar(),
-    <Num> => SimpleTerm::Int(<>),
-    "#supremum" => SimpleTerm::Supremum,
-    "#infimum" => SimpleTerm::Infimum,
+//    "_" => SimpleTerm::FreshVar(),
+//    <Num> => SimpleTerm::Int(<>),
+//    "#supremum" => SimpleTerm::Supremum,
+//    "#infimum" => SimpleTerm::Infimum,
 }
 
 Const: Symbol = <r"[_]*[a-z][a-zA-Z0-9]*"> => <>.to_string();
@@ -76,4 +76,9 @@ match {
     r"-?[0-9]+",
     r"[_]*[a-z][a-zA-Z0-9]*",
     r"[_]*[A-Z][a-zA-Z0-9]*",
+} else {
+    r"\s*" => { },
+    r"%[\n\r]" => { }, // Blank `%` comment
+    r"%[^*][^\n\r]*[\n\r]" => { }, // `%` comments
+    r"%\*[^*]*\*+(?:[^%*][^*]*\*+)*%" => { },  // `%* comments *%`
 }
