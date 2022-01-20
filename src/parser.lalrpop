@@ -1,0 +1,79 @@
+use std::str::FromStr;
+
+use crate::syntax::*;
+
+grammar;
+
+pub Program: Program = {
+    <Constraint+> => Program(<>),
+}
+
+Constraint: Constraint = {
+    <Head> "." => Constraint::Fact(<>),
+    <h:Head> ":-" <ls:(<Literal> ",")*> <l:Literal> "." => {
+        let mut args = ls;
+        args.push(l);
+        Constraint::Rule(h, args)
+    },
+    ":-" <ls:(<Literal> ",")*> <l:Literal> "." => {
+        let mut args = ls;
+        args.push(l);
+        Constraint::Integrity(args)
+    }
+}
+
+Head : Head = {
+    <Const> => Head::Simple(<>),
+    <Function> => Head::Fun(<>.0, <>.1), 
+}
+
+Literal : Literal = {
+    <Atom> => Literal::Atom(<>),
+    "not" <Atom> => Literal::Not(<>),
+}
+
+Atom : Atom = {
+    <SimpleTerm> => Atom::Simple(<>),
+    <Function> => Atom::Fun(<>.0, <>.1), 
+}
+
+Function : (Variable, Vec<SimpleTerm>) = {
+    <p:Id> "(" <ts:(<SimpleTerm> ",")*> <t:SimpleTerm> ")" => {
+        let mut args = ts;
+        args.push(t);
+        (p, args)
+    }
+}
+
+SimpleTerm : SimpleTerm = {
+    <Const> => SimpleTerm::Symbol(<>),
+    <Id> => SimpleTerm::Variable(<>),
+    "_" => SimpleTerm::FreshVar(),
+    <Num> => SimpleTerm::Int(<>),
+    "#supremum" => SimpleTerm::Supremum,
+    "#infimum" => SimpleTerm::Infimum,
+}
+
+Const: Symbol = <r"[_]*[a-z][a-zA-Z0-9]*"> => <>.to_string();
+
+Id: Variable = <r"[_]*[A-Z][a-zA-Z0-9]*"> => <>.to_string();
+
+Num: isize = r"-?[0-9]+" => isize::from_str(<>).unwrap();
+
+
+match {
+    "(",
+    ")",
+    ":-",
+    ",",
+    ".",
+} else {
+    "not",
+    "#supremum",
+    "#infimum",
+    "_",
+} else {
+    r"-?[0-9]+",
+    r"[_]*[a-z][a-zA-Z0-9]*",
+    r"[_]*[A-Z][a-zA-Z0-9]*",
+}
