@@ -1,0 +1,1 @@
+pub const DEFAULT_WIDTH: usize = 80;

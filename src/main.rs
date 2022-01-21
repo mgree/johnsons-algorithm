@@ -1,12 +1,10 @@
-#[macro_use]
-extern crate lalrpop_util;
+extern crate logroll;
 
 use std::io::Read;
 
 use log::error;
 
-mod syntax;
-use crate::syntax::*;
+use logroll::syntax::*;
 
 fn main() {
     let config = clap::App::new(env!("CARGO_PKG_NAME"))
@@ -54,7 +52,5 @@ fn main() {
         std::process::exit(2);
     });
 
-    for c in p.0 {
-        println!("{:?}", c);
-    }
+    println!("{}", p);
 }
