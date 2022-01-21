@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+use std::iter::Extend;
+
 use crate::options::DEFAULT_WIDTH;
 
 lalrpop_mod!(parser);
@@ -45,7 +48,65 @@ pub enum SimpleTerm {
 pub type Symbol = String;
 pub type Variable = String;
 
+pub enum SafetyError<'a> {
+    NonPositiveVariable(&'a Variable, &'a Constraint),
+    VariableInFact(&'a Variable, &'a Head),
+}
+
 impl Program {
+    pub fn check_safety<'a>(&'a self) -> Vec<SafetyError<'a>> {
+        let mut errors: Vec<SafetyError<'a>> = Vec::new();
+        for constraint in &self.0 {
+            match constraint {
+                Constraint::Rule(head, body) => {
+                    let mut all_vars = head.vars();
+                    all_vars.extend(body.iter().flat_map(|l| l.vars()));
+
+                    let pos_vars = body
+                        .iter()
+                        .filter(|l| l.is_positive())
+                        .flat_map(|l| l.vars())
+                        .collect();
+
+                    let unsafe_vars = all_vars.difference(&pos_vars);
+
+                    errors.extend(
+                        unsafe_vars.map(|v| SafetyError::NonPositiveVariable(v, constraint)),
+                    )
+                }
+                Constraint::Integrity(ls) => {
+                    let all_vars: HashSet<_> = ls.iter().flat_map(|l| l.vars()).collect();
+
+                    let pos_vars = ls
+                        .iter()
+                        .filter(|l| l.is_positive())
+                        .flat_map(|l| l.vars())
+                        .collect();
+
+                    let unsafe_vars = all_vars.difference(&pos_vars);
+
+                    errors.extend(
+                        unsafe_vars.map(|v| SafetyError::NonPositiveVariable(v, constraint)),
+                    )
+                }
+                Constraint::Fact(head) => errors.extend(
+                    head.vars()
+                        .iter()
+                        .map(|v| SafetyError::VariableInFact(v, head)),
+                ),
+            }
+        }
+        errors
+    }
+
+    pub fn is_ground(&self) -> bool {
+        self.0.iter().all(|c| c.is_ground())
+    }
+
+    pub fn vars(&self) -> HashSet<&Variable> {
+        self.0.iter().flat_map(|c| c.vars()).collect()
+    }
+
     pub fn parse(s: &str) -> Result<Self, String> {
         parser::ProgramParser::new()
             .parse(s)
@@ -63,6 +124,26 @@ impl Program {
 }
 
 impl Constraint {
+    pub fn is_ground(&self) -> bool {
+        match self {
+            Constraint::Rule(head, body) => head.is_ground() && body.iter().all(|l| l.is_ground()),
+            Constraint::Fact(head) => head.is_ground(),
+            Constraint::Integrity(ls) => ls.iter().all(|l| l.is_ground()),
+        }
+    }
+
+    pub fn vars(&self) -> HashSet<&Variable> {
+        match self {
+            Constraint::Rule(head, body) => body
+                .iter()
+                .flat_map(|l| l.vars())
+                .chain(head.vars())
+                .collect(),
+            Constraint::Fact(head) => head.vars(),
+            Constraint::Integrity(ls) => ls.iter().flat_map(|l| l.vars()).collect(),
+        }
+    }
+
     pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
     where
         D: pretty::DocAllocator<'b, A>,
@@ -102,6 +183,25 @@ impl Constraint {
 }
 
 impl Literal {
+    pub fn is_positive(&self) -> bool {
+        match self {
+            Literal::Atom(..) => true,
+            Literal::Not(..) => false,
+        }
+    }
+
+    pub fn is_ground(&self) -> bool {
+        match self {
+            Literal::Atom(a) | Literal::Not(a) => a.is_ground(),
+        }
+    }
+
+    pub fn vars(&self) -> HashSet<&Variable> {
+        match self {
+            Literal::Atom(a) | Literal::Not(a) => a.vars(),
+        }
+    }
+
     pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
     where
         D: pretty::DocAllocator<'b, A>,
@@ -116,6 +216,20 @@ impl Literal {
 }
 
 impl Head {
+    pub fn is_ground(&self) -> bool {
+        match self {
+            Head::Simple(..) => true,
+            Head::Fun(_f, args) => args.iter().all(|t| t.is_ground()),
+        }
+    }
+
+    pub fn vars(&self) -> HashSet<&Variable> {
+        match self {
+            Head::Simple(..) => HashSet::new(),
+            Head::Fun(_f, args) => args.iter().flat_map(|arg| arg.vars()).collect(),
+        }
+    }
+
     pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
     where
         D: pretty::DocAllocator<'b, A>,
@@ -141,6 +255,20 @@ impl Head {
 }
 
 impl Atom {
+    pub fn is_ground(&self) -> bool {
+        match self {
+            Atom::Simple(t) => t.is_ground(),
+            Atom::Fun(_f, args) => args.iter().all(|t| t.is_ground()),
+        }
+    }
+
+    pub fn vars(&self) -> HashSet<&Variable> {
+        match self {
+            Atom::Simple(t) => t.vars(),
+            Atom::Fun(_f, args) => args.iter().flat_map(|arg| arg.vars()).collect(),
+        }
+    }
+
     pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
     where
         D: pretty::DocAllocator<'b, A>,
@@ -166,6 +294,20 @@ impl Atom {
 }
 
 impl SimpleTerm {
+    pub fn is_ground(&self) -> bool {
+        match self {
+            SimpleTerm::Symbol(..) | SimpleTerm::Int(..) => true,
+            SimpleTerm::Variable(..) => false,
+        }
+    }
+
+    pub fn vars(&self) -> HashSet<&Variable> {
+        match self {
+            SimpleTerm::Symbol(..) | SimpleTerm::Int(..) => HashSet::new(),
+            SimpleTerm::Variable(v) => HashSet::from([v]),
+        }
+    }
+
     pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
     where
         D: pretty::DocAllocator<'b, A>,
@@ -192,7 +334,6 @@ macro_rules! pretty_Display {
         }
     };
 }
-
 pretty_Display!(Program);
 pretty_Display!(Constraint);
 pretty_Display!(Literal);
