@@ -18,7 +18,23 @@ fn main() {
                 .default_value("-")
                 .index(1),
         )
+        .arg(
+            clap::Arg::new("VERBOSE")
+                .short('v')
+                .multiple_occurrences(true)
+                .help("Sets the level of verbosity (more occurrences for more output)"),
+        )
         .get_matches();
+
+    let verbosity = match config.occurrences_of("VERBOSE") {
+        0 => log::LevelFilter::Warn,
+        1 => log::LevelFilter::Info,
+        2 => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Trace,
+    };
+    env_logger::Builder::from_default_env()
+        .filter(None, verbosity)
+        .init();
 
     let input_source = config.value_of("INPUT").expect("input source");
     let mut input = String::new();

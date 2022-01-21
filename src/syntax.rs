@@ -34,10 +34,9 @@ pub enum Atom {
 pub enum SimpleTerm {
     Symbol(Symbol),
     Variable(Variable),
+    Int(isize),
     /*
     // other stuff supported by clingo
-    FreshVar(),
-    Int(isize),
     Supremum,
     Infimum,
     */
