@@ -1,0 +1,70 @@
+name: Main workflow
+
+on:
+  pull_request:
+  push:
+  schedule:
+    - cron: '15 11 * * *'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Build logroll and run unit tests
+        run: |
+          cargo build --verbose --all --release
+          cargo test
+        
+      - name: Upload macOS release build
+        uses: actions/upload-artifact@v2
+        if: ${{ matrix.os == 'macos-latest' }}
+        with:
+          name: logroll.macos
+          path: target/release/logroll
+
+      - name: Upload Linux release build
+        uses: actions/upload-artifact@v2
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        with:
+          name: logroll.linux
+          path: target/release/logroll
+            
+  prerelease:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+      
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v2
+
+      - name: Rename binaries
+        run: |
+          mkdir logroll
+          mv logroll.linux/logroll logroll/logroll.linux
+          mv logroll.macos/logroll logroll/logroll.macos
+  
+      - name: Deploy 'latest' release
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Latest development build"
+          files: |
+            logroll/logroll.linux
+            logroll/logroll.macos
+
+        
+        
