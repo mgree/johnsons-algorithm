@@ -1,0 +1,9 @@
+edge(1,2).
+edge(1,3).
+edge(1,4).
+edge(2,4).
+edge(3,5).
+edge(5,1).
+
+reach(X, Y) :- edge(X, Y).
+reach(X, Z) :- edge(X, Y), reach(Y, Z).
