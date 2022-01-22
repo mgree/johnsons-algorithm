@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::iter::Extend;
 
 use crate::options::DEFAULT_WIDTH;
 
@@ -48,57 +47,7 @@ pub enum SimpleTerm {
 pub type Symbol = String;
 pub type Variable = String;
 
-pub enum SafetyError<'a> {
-    NonPositiveVariable(&'a Variable, &'a Constraint),
-    VariableInFact(&'a Variable, &'a Head),
-}
-
 impl Program {
-    pub fn check_safety<'a>(&'a self) -> Vec<SafetyError<'a>> {
-        let mut errors: Vec<SafetyError<'a>> = Vec::new();
-        for constraint in &self.0 {
-            match constraint {
-                Constraint::Rule(head, body) => {
-                    let mut all_vars = head.vars();
-                    all_vars.extend(body.iter().flat_map(|l| l.vars()));
-
-                    let pos_vars = body
-                        .iter()
-                        .filter(|l| l.is_positive())
-                        .flat_map(|l| l.vars())
-                        .collect();
-
-                    let unsafe_vars = all_vars.difference(&pos_vars);
-
-                    errors.extend(
-                        unsafe_vars.map(|v| SafetyError::NonPositiveVariable(v, constraint)),
-                    )
-                }
-                Constraint::Integrity(ls) => {
-                    let all_vars: HashSet<_> = ls.iter().flat_map(|l| l.vars()).collect();
-
-                    let pos_vars = ls
-                        .iter()
-                        .filter(|l| l.is_positive())
-                        .flat_map(|l| l.vars())
-                        .collect();
-
-                    let unsafe_vars = all_vars.difference(&pos_vars);
-
-                    errors.extend(
-                        unsafe_vars.map(|v| SafetyError::NonPositiveVariable(v, constraint)),
-                    )
-                }
-                Constraint::Fact(head) => errors.extend(
-                    head.vars()
-                        .iter()
-                        .map(|v| SafetyError::VariableInFact(v, head)),
-                ),
-            }
-        }
-        errors
-    }
-
     pub fn is_ground(&self) -> bool {
         self.0.iter().all(|c| c.is_ground())
     }
