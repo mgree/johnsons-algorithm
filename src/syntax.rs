@@ -9,8 +9,8 @@ pub struct Program(pub Vec<Constraint>);
 
 #[derive(Debug)]
 pub enum Constraint {
-    Rule(Head, Vec<Literal>),
-    Fact(Head),
+    Rule(Atom, Vec<Literal>),
+    Fact(Atom),
     Integrity(Vec<Literal>),
 }
 
@@ -21,18 +21,12 @@ pub enum Literal {
 }
 
 #[derive(Debug)]
-pub enum Head {
-    Simple(Symbol),
-    Fun(Variable, Vec<SimpleTerm>),
-}
-
-#[derive(Debug)]
 pub enum Atom {
-    Simple(SimpleTerm),
-    Fun(Variable, Vec<SimpleTerm>),
+    Simple(Symbol),
+    Fun(Symbol, Vec<SimpleTerm>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum SimpleTerm {
     Symbol(Symbol),
     Variable(Variable),
@@ -164,56 +158,17 @@ impl Literal {
     }
 }
 
-impl Head {
-    pub fn is_ground(&self) -> bool {
-        match self {
-            Head::Simple(..) => true,
-            Head::Fun(_f, args) => args.iter().all(|t| t.is_ground()),
-        }
-    }
-
-    pub fn vars(&self) -> HashSet<&Variable> {
-        match self {
-            Head::Simple(..) => HashSet::new(),
-            Head::Fun(_f, args) => args.iter().flat_map(|arg| arg.vars()).collect(),
-        }
-    }
-
-    pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
-    where
-        D: pretty::DocAllocator<'b, A>,
-        D::Doc: Clone,
-        A: Clone,
-    {
-        match self {
-            Head::Simple(sym) => pp.text(sym),
-            Head::Fun(f, args) => pp
-                .text(f)
-                .append("(")
-                .append(
-                    pp.intersperse(
-                        args.iter().map(|arg| arg.pretty(pp)),
-                        pp.text(",").append(pp.line()),
-                    )
-                    .nest(1)
-                    .group(),
-                )
-                .append(")"),
-        }
-    }
-}
-
 impl Atom {
     pub fn is_ground(&self) -> bool {
         match self {
-            Atom::Simple(t) => t.is_ground(),
+            Atom::Simple(..) => true,
             Atom::Fun(_f, args) => args.iter().all(|t| t.is_ground()),
         }
     }
 
     pub fn vars(&self) -> HashSet<&Variable> {
         match self {
-            Atom::Simple(t) => t.vars(),
+            Atom::Simple(..) => HashSet::new(),
             Atom::Fun(_f, args) => args.iter().flat_map(|arg| arg.vars()).collect(),
         }
     }
@@ -225,7 +180,7 @@ impl Atom {
         A: Clone,
     {
         match self {
-            Atom::Simple(t) => t.pretty(pp),
+            Atom::Simple(sym) => pp.text(sym),
             Atom::Fun(f, args) => pp
                 .text(f)
                 .append("(")
@@ -286,6 +241,5 @@ macro_rules! pretty_Display {
 pretty_Display!(Program);
 pretty_Display!(Constraint);
 pretty_Display!(Literal);
-pretty_Display!(Head);
 pretty_Display!(Atom);
 pretty_Display!(SimpleTerm);

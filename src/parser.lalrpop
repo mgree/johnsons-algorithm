@@ -9,8 +9,8 @@ pub Program: Program = {
 }
 
 Constraint: Constraint = {
-    <Head> "." => Constraint::Fact(<>),
-    <h:Head> ":-" <ls:(<Literal> ",")*> <l:Literal> "." => {
+    <Atom> "." => Constraint::Fact(<>),
+    <h:Atom> ":-" <ls:(<Literal> ",")*> <l:Literal> "." => {
         let mut args = ls;
         args.push(l);
         Constraint::Rule(h, args)
@@ -22,18 +22,13 @@ Constraint: Constraint = {
     }
 }
 
-Head : Head = {
-    <Const> => Head::Simple(<>),
-    <Function> => Head::Fun(<>.0, <>.1), 
-}
-
 Literal : Literal = {
     <Atom> => Literal::Atom(<>),
     "not" <Atom> => Literal::Not(<>),
 }
 
 Atom : Atom = {
-    <SimpleTerm> => Atom::Simple(<>),
+    <Const> => Atom::Simple(<>),
     <Function> => Atom::Fun(<>.0, <>.1), 
 }
 

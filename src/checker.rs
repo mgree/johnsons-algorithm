@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Extend;
 
@@ -5,19 +6,46 @@ use crate::syntax::*;
 
 pub enum Error<'a> {
     NonPositiveVariable(&'a Variable, &'a Constraint),
-    VariableInFact(&'a Variable, &'a Head),
+    VariableInFact(&'a Variable, &'a Atom),
+    ArityMismatch(&'a Atom, usize),
+    ExpectedBoolean(&'a SimpleTerm, &'a Atom),
 }
 
-impl Program {
-    pub fn safety_errors(&self) -> Vec<Error<'_>> {
-        self.0.iter().flat_map(|c| c.safety_errors()).collect()
+#[derive(Debug)]
+pub struct Checker<'a> {
+    program: &'a Program,
+    types: HashMap<Symbol, usize>,
+}
+
+impl<'a> Checker<'a> {
+    pub fn new(program: &'a Program) -> Result<Checker<'_>, Vec<Error<'_>>> {
+        let mut checker = Checker {
+            program,
+            types: HashMap::new(),
+        };
+
+        let errors = checker.check_program();
+
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        Ok(checker)
     }
-}
 
-impl Constraint {
-    pub fn safety_errors(&self) -> Vec<Error<'_>> {
-        match self {
+    fn check_program(&mut self) -> Vec<Error<'a>> {
+        self.program
+            .0
+            .iter()
+            .flat_map(|c| self.check_constraint(c))
+            .collect()
+    }
+
+    fn check_constraint(&mut self, c: &'a Constraint) -> Vec<Error<'a>> {
+        match c {
             Constraint::Rule(head, body) => {
+                let mut errors = self.check_atom(head);
+
                 let mut all_vars = head.vars();
                 all_vars.extend(body.iter().flat_map(|l| l.vars()));
 
@@ -29,9 +57,9 @@ impl Constraint {
 
                 let unsafe_vars = all_vars.difference(&pos_vars);
 
-                unsafe_vars
-                    .map(|v| Error::NonPositiveVariable(v, self))
-                    .collect()
+                errors.extend(unsafe_vars.map(|v| Error::NonPositiveVariable(v, c)));
+
+                errors
             }
             Constraint::Integrity(ls) => {
                 let all_vars: HashSet<_> = ls.iter().flat_map(|l| l.vars()).collect();
@@ -45,14 +73,34 @@ impl Constraint {
                 let unsafe_vars = all_vars.difference(&pos_vars);
 
                 unsafe_vars
-                    .map(|v| Error::NonPositiveVariable(v, self))
+                    .map(|v| Error::NonPositiveVariable(v, c))
                     .collect()
             }
-            Constraint::Fact(head) => head
-                .vars()
-                .iter()
-                .map(|v| Error::VariableInFact(v, head))
-                .collect(),
+            Constraint::Fact(head) => {
+                let mut errors = self.check_atom(head);
+
+                errors.extend(head.vars().iter().map(|v| Error::VariableInFact(v, head)));
+
+                errors
+            }
+        }
+    }
+
+    fn check_atom(&mut self, a: &'a Atom) -> Vec<Error<'a>> {
+        let (sym, got_arity) = match a {
+            Atom::Simple(sym) => (sym, 0),
+            Atom::Fun(sym, args) => (sym, args.len()),
+        };
+
+        match self.types.get(sym) {
+            Some(expected_arity) if *expected_arity != got_arity => {
+                vec![Error::ArityMismatch(a, *expected_arity)]
+            }
+            Some(_) => Vec::new(),
+            None => {
+                self.types.insert(sym.clone(), got_arity);
+                Vec::new()
+            }
         }
     }
 }
@@ -63,8 +111,9 @@ mod test {
 
     fn is_safe(s: &str) {
         let p = Program::parse(s).expect("correct parse");
+        let c = Checker::new(&p);
 
-        assert!(p.safety_errors().is_empty())
+        assert!(c.is_ok())
     }
 
     #[test]
@@ -98,7 +147,7 @@ mod test {
     fn all_vars_unsafe() {
         let p = Program::parse("f(X, Y).").expect("correct parse");
 
-        let errors = p.safety_errors();
+        let errors = Checker::new(&p).expect_err("safety violation");
         assert!(!errors.is_empty());
         assert!(errors.len() == 2);
 

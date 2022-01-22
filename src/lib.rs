@@ -4,4 +4,4 @@ extern crate lalrpop_util;
 pub mod options;
 
 pub mod syntax;
-pub mod safety;
+pub mod checker;
