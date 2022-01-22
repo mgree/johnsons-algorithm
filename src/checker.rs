@@ -4,6 +4,7 @@ use std::iter::Extend;
 
 use crate::syntax::*;
 
+#[derive(Debug)]
 pub enum Error<'a> {
     NonPositiveVariable(&'a Variable, &'a Constraint),
     VariableInFact(&'a Variable, &'a Atom),
@@ -152,5 +153,26 @@ mod test {
             Error::VariableInFact(v, _) => v.as_str() == "X" || v.as_str() == "Y",
             _ => false,
         }));
+    }
+
+    #[test]
+    fn bad_arity_unsafe() {
+        let p = Program::parse("f(a). f(b, c).").expect("correct parse");
+
+        let errors = Checker::new(&p).expect_err("safety violation");
+        assert!(!errors.is_empty());
+        assert!(errors.len() == 1);
+
+        match &errors[0] {
+            Error::ArityMismatch(a, expected) => {
+                match &p.0[1] {
+                    Constraint::Fact(a2) => assert_eq!(a, &a2),
+                    c => panic!("unexpected constraint {} in error", c),
+                };
+
+                assert_eq!(*expected, 1);
+            }
+            e => panic!("unexpected error {:?}", e),
+        };
     }
 }

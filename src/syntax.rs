@@ -20,13 +20,13 @@ pub enum Literal {
     Not(Atom),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Atom {
     pub f: Symbol,
     pub args: Vec<SimpleTerm>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SimpleTerm {
     Symbol(Symbol),
     Variable(Variable),
