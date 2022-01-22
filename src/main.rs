@@ -5,6 +5,7 @@ use std::io::Read;
 use log::error;
 
 use logroll::syntax::*;
+use logroll::checker::Checker;
 
 fn main() {
     let config = clap::App::new(env!("CARGO_PKG_NAME"))
@@ -44,7 +45,7 @@ fn main() {
 
     if let Err(err) = res {
         error!("I/O error: {}", err);
-        std::process::exit(47);
+        std::process::exit(4);
     }
 
     let p = Program::parse(&input).unwrap_or_else(|e| {
@@ -53,4 +54,16 @@ fn main() {
     });
 
     println!("{}", p);
+
+    let c = Checker::new(&p);
+
+    let c = match c {
+        Err(errs) => {
+            for err in errs {
+                error!("Error: {}", err);
+            }
+            std::process::exit(3);
+        }
+        Ok(c) => c,
+    };
 }

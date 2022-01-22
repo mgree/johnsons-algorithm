@@ -4,12 +4,14 @@ use std::iter::Extend;
 
 use crate::syntax::*;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error<'a> {
+    #[error("the variable `{0}` doesn't occur positively in `{1}`")]
     NonPositiveVariable(&'a Variable, &'a Constraint),
+    #[error("the variable `{0}` occurs in the fact `{1}`")]
     VariableInFact(&'a Variable, &'a Atom),
+    #[error("the atom `{0}` should have arity `{1}`")]
     ArityMismatch(&'a Atom, usize),
-    ExpectedBoolean(&'a SimpleTerm, &'a Atom),
 }
 
 #[derive(Debug)]
