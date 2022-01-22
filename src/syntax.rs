@@ -38,6 +38,12 @@ pub enum SimpleTerm {
     */
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Type {
+    Relation(usize),
+    Constant,
+}
+
 pub type Symbol = String;
 pub type Variable = String;
 
@@ -126,6 +132,12 @@ impl Constraint {
 }
 
 impl Literal {
+    pub fn as_atom(&self) -> &Atom {
+        match self {
+            Literal::Atom(a) | Literal::Not(a) => a
+        }
+    }
+
     pub fn is_positive(&self) -> bool {
         match self {
             Literal::Atom(..) => true,
@@ -220,6 +232,20 @@ impl SimpleTerm {
     }
 }
 
+impl Type {
+    pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
+    where
+        D: pretty::DocAllocator<'b, A>,
+        D::Doc: Clone,
+        A: Clone,
+    {
+        match self {
+            Type::Relation(arity) => pp.text(format!("relation({})", arity)),
+            Type::Constant => pp.text("constant"),
+        }
+    }
+}
+
 macro_rules! pretty_Display {
     ($T:ty) => {
         impl std::fmt::Display for $T {
@@ -237,3 +263,4 @@ pretty_Display!(Constraint);
 pretty_Display!(Literal);
 pretty_Display!(Atom);
 pretty_Display!(SimpleTerm);
+pretty_Display!(Type);

@@ -57,7 +57,7 @@ fn main() {
 
     let c = Checker::new(&p);
 
-    let c = match c {
+    let _c = match c {
         Err(errs) => {
             for err in errs {
                 error!("Error: {}", err);

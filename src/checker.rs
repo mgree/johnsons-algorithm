@@ -4,6 +4,9 @@ use std::iter::Extend;
 
 use crate::syntax::*;
 
+// TODO use unification to globally figure out the types of each relation
+// TODO dive into each atom and find any symbols being used that are in the relations table
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error<'a> {
     #[error("the variable `{0}` doesn't occur positively in `{1}`")]
@@ -12,12 +15,16 @@ pub enum Error<'a> {
     VariableInFact(&'a Variable, &'a Atom),
     #[error("the atom `{0}` should have arity `{1}`")]
     ArityMismatch(&'a Atom, usize),
+    #[error("the atom `{0}` was used as a relation, but it has type `{1}`")]
+    AppliedNonRelation(&'a Atom, Type),
+    #[error("the symbol `{0}` was used as a constant, but it has type `{1}`")]
+    RelationAsConstant(&'a Symbol, Type),
 }
 
 #[derive(Debug)]
 pub struct Checker<'a> {
     program: &'a Program,
-    types: HashMap<Symbol, usize>,
+    types: HashMap<Symbol, Type>,
 }
 
 impl<'a> Checker<'a> {
@@ -47,8 +54,11 @@ impl<'a> Checker<'a> {
     fn check_constraint(&mut self, c: &'a Constraint) -> Vec<Error<'a>> {
         match c {
             Constraint::Rule(head, body) => {
+                // check the parts
                 let mut errors = self.check_atom(head);
+                errors.extend(body.iter().flat_map(|l| self.check_literal(l)));
 
+                // positivity/safety checks
                 let mut all_vars = head.vars();
                 all_vars.extend(body.iter().flat_map(|l| l.vars()));
 
@@ -57,31 +67,32 @@ impl<'a> Checker<'a> {
                     .filter(|l| l.is_positive())
                     .flat_map(|l| l.vars())
                     .collect();
-
                 let unsafe_vars = all_vars.difference(&pos_vars);
-
                 errors.extend(unsafe_vars.map(|v| Error::NonPositiveVariable(v, c)));
 
                 errors
             }
             Constraint::Integrity(ls) => {
-                let all_vars: HashSet<_> = ls.iter().flat_map(|l| l.vars()).collect();
+                // check the parts
+                let mut errors: Vec<_> = ls.iter().flat_map(|l| self.check_literal(l)).collect();
 
+                // positivity/safety checks
+                let all_vars: HashSet<_> = ls.iter().flat_map(|l| l.vars()).collect();
                 let pos_vars = ls
                     .iter()
                     .filter(|l| l.is_positive())
                     .flat_map(|l| l.vars())
                     .collect();
-
                 let unsafe_vars = all_vars.difference(&pos_vars);
+                errors.extend(unsafe_vars.map(|v| Error::NonPositiveVariable(v, c)));
 
-                unsafe_vars
-                    .map(|v| Error::NonPositiveVariable(v, c))
-                    .collect()
+                errors
             }
             Constraint::Fact(head) => {
+                // check the parts
                 let mut errors = self.check_atom(head);
 
+                // positivity/safety check (specialized)
                 errors.extend(head.vars().iter().map(|v| Error::VariableInFact(v, head)));
 
                 errors
@@ -89,18 +100,43 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn check_literal(&mut self, l: &'a Literal) -> Vec<Error<'a>> {
+        self.check_atom(l.as_atom())
+    }
+
     fn check_atom(&mut self, a: &'a Atom) -> Vec<Error<'a>> {
         let got_arity = a.args.len();
 
-        match self.types.get(&a.f) {
-            Some(expected_arity) if *expected_arity != got_arity => {
+        let mut errors = match self.types.get(&a.f) {
+            Some(Type::Relation(expected_arity)) if *expected_arity != got_arity => {
                 vec![Error::ArityMismatch(a, *expected_arity)]
             }
-            Some(_) => Vec::new(),
+            Some(Type::Relation(..)) => vec![],
+            Some(t) => vec![Error::AppliedNonRelation(a, t.clone())],
             None => {
-                self.types.insert(a.f.clone(), got_arity);
-                Vec::new()
+                self.types.insert(a.f.clone(), Type::Relation(got_arity));
+                vec![]
             }
+        };
+
+        errors.extend(a.args.iter().flat_map(|t| self.check_term(t)));
+
+        errors
+    }
+
+    fn check_term(&mut self, t: &'a SimpleTerm) -> Vec<Error<'a>> {
+        match t {
+            SimpleTerm::Variable(..) | SimpleTerm::Int(..) => vec![],
+            SimpleTerm::Symbol(sym) => match self.types.get(sym) {
+                Some(t @ Type::Relation(..)) => {
+                    vec![Error::RelationAsConstant(sym, t.clone())]
+                }
+                Some(Type::Constant) => vec![],
+                None => {
+                    self.types.insert(sym.clone(), Type::Constant);
+                    vec![]
+                }
+            },
         }
     }
 }
@@ -173,6 +209,106 @@ mod test {
                 };
 
                 assert_eq!(*expected, 1);
+            }
+            e => panic!("unexpected error {:?}", e),
+        };
+    }
+
+    #[test]
+    fn relation_as_constant() {
+        let p = Program::parse("f(1). g(1) :- g(f).").expect("correct parse");
+
+        let errors = Checker::new(&p).expect_err("safety violation");
+        assert!(!errors.is_empty());
+        assert!(errors.len() == 1);
+
+        match &errors[0] {
+            Error::RelationAsConstant(sym, ty) => {
+                assert_eq!(sym.as_str(), "f");
+                assert_eq!(ty, &Type::Relation(1));
+            }
+            e => panic!("unexpected error {:?}", e),
+        };
+    }
+
+    #[test]
+    fn relation_as_constant_integrity() {
+        let p = Program::parse("f(1). :- not g(f).").expect("correct parse");
+
+        let errors = Checker::new(&p).expect_err("safety violation");
+        assert!(!errors.is_empty());
+        assert!(errors.len() == 1);
+
+        match &errors[0] {
+            Error::RelationAsConstant(sym, ty) => {
+                assert_eq!(sym.as_str(), "f");
+                assert_eq!(ty, &Type::Relation(1));
+            }
+            e => panic!("unexpected error {:?}", e),
+        };
+    }
+
+    #[test]
+    fn applied_non_relation() {
+        let p = Program::parse("f(a). a(2).").expect("correct parse");
+
+        let errors = Checker::new(&p).expect_err("safety violation");
+        assert!(!errors.is_empty());
+        assert!(errors.len() == 1);
+
+        match &errors[0] {
+            Error::AppliedNonRelation(a, ty) => {
+                match &p.0[1] {
+                    Constraint::Fact(a2) => assert_eq!(a, &a2),
+                    c => panic!("unexpected constraint {} in error", c),
+                };
+                assert_eq!(ty, &Type::Constant);
+            }
+            e => panic!("unexpected error {:?}", e),
+        };
+    }
+
+    #[test]
+    fn applied_non_relation_rule() {
+        let p = Program::parse("f(a). f(b) :- a(2).").expect("correct parse");
+
+        let errors = Checker::new(&p).expect_err("safety violation");
+        assert!(!errors.is_empty());
+        assert!(errors.len() == 1);
+
+        match &errors[0] {
+            Error::AppliedNonRelation(a, ty) => {
+                match &p.0[1] {
+                    Constraint::Rule(_, ls) => {
+                        assert_eq!(ls.len(), 1);
+                        assert_eq!(a, &ls[0].as_atom());
+                    }
+                    c => panic!("unexpected constraint {} in error", c),
+                };
+                assert_eq!(ty, &Type::Constant);
+            }
+            e => panic!("unexpected error {:?}", e),
+        };
+    }
+
+    #[test]
+    fn applied_non_relation_integrity() {
+        let p = Program::parse("f(a). :- a(2).").expect("correct parse");
+
+        let errors = Checker::new(&p).expect_err("safety violation");
+        assert!(!errors.is_empty());
+        assert!(errors.len() == 1);
+
+        match &errors[0] {
+            Error::AppliedNonRelation(a, ty) => {
+                match &p.0[1] {
+                    Constraint::Integrity(ls) => {
+                        assert_eq!(ls.len(), 1);
+                        assert_eq!(a, &ls[0].as_atom());
+                    }
+                    c => panic!("unexpected constraint {} in error", c),
+                };
+                assert_eq!(ty, &Type::Constant);
             }
             e => panic!("unexpected error {:?}", e),
         };
