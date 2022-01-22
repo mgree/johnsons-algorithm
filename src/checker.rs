@@ -87,18 +87,15 @@ impl<'a> Checker<'a> {
     }
 
     fn check_atom(&mut self, a: &'a Atom) -> Vec<Error<'a>> {
-        let (sym, got_arity) = match a {
-            Atom::Simple(sym) => (sym, 0),
-            Atom::Fun(sym, args) => (sym, args.len()),
-        };
+        let got_arity = a.args.len();
 
-        match self.types.get(sym) {
+        match self.types.get(&a.f) {
             Some(expected_arity) if *expected_arity != got_arity => {
                 vec![Error::ArityMismatch(a, *expected_arity)]
             }
             Some(_) => Vec::new(),
             None => {
-                self.types.insert(sym.clone(), got_arity);
+                self.types.insert(a.f.clone(), got_arity);
                 Vec::new()
             }
         }

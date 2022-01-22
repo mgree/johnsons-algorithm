@@ -21,9 +21,9 @@ pub enum Literal {
 }
 
 #[derive(Debug)]
-pub enum Atom {
-    Simple(Symbol),
-    Fun(Symbol, Vec<SimpleTerm>),
+pub struct Atom {
+    pub f: Symbol,
+    pub args: Vec<SimpleTerm>,
 }
 
 #[derive(Clone, Debug)]
@@ -160,17 +160,11 @@ impl Literal {
 
 impl Atom {
     pub fn is_ground(&self) -> bool {
-        match self {
-            Atom::Simple(..) => true,
-            Atom::Fun(_f, args) => args.iter().all(|t| t.is_ground()),
-        }
+        self.args.iter().all(|t| t.is_ground())
     }
 
     pub fn vars(&self) -> HashSet<&Variable> {
-        match self {
-            Atom::Simple(..) => HashSet::new(),
-            Atom::Fun(_f, args) => args.iter().flat_map(|arg| arg.vars()).collect(),
-        }
+        self.args.iter().flat_map(|arg| arg.vars()).collect()
     }
 
     pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
@@ -179,20 +173,20 @@ impl Atom {
         D::Doc: Clone,
         A: Clone,
     {
-        match self {
-            Atom::Simple(sym) => pp.text(sym),
-            Atom::Fun(f, args) => pp
-                .text(f)
+        if self.args.is_empty() {
+            pp.text(&self.f)
+        } else {
+            pp.text(&self.f)
                 .append("(")
                 .append(
                     pp.intersperse(
-                        args.iter().map(|arg| arg.pretty(pp)),
+                        self.args.iter().map(|arg| arg.pretty(pp)),
                         pp.text(",").append(pp.line()),
                     )
                     .nest(1)
                     .group(),
                 )
-                .append(")"),
+                .append(")")
         }
     }
 }

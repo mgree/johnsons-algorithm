@@ -28,8 +28,8 @@ Literal : Literal = {
 }
 
 Atom : Atom = {
-    <Const> => Atom::Simple(<>),
-    <Function> => Atom::Fun(<>.0, <>.1), 
+    <Const> => Atom { f: <>, args: vec![] },
+    <Function> => Atom { f: <>.0, args: <>.1 }, 
 }
 
 Function : (Variable, Vec<SimpleTerm>) = {
