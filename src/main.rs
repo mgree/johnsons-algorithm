@@ -2,7 +2,7 @@ extern crate logroll;
 
 use std::io::Read;
 
-use log::error;
+use log::{error,info};
 
 use logroll::syntax::*;
 use logroll::checker::Checker;
@@ -53,11 +53,11 @@ fn main() {
         std::process::exit(2);
     });
 
-    println!("{}", p);
+    info!("% parsed\n{}", p);
 
     let c = Checker::new(&p);
 
-    let _c = match c {
+    let c = match c {
         Err(errs) => {
             for err in errs {
                 error!("Error: {}", err);
@@ -66,4 +66,6 @@ fn main() {
         }
         Ok(c) => c,
     };
+
+    println!("{}", c.show_refs())
 }

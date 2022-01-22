@@ -233,6 +233,13 @@ impl SimpleTerm {
 }
 
 impl Type {
+    pub fn is_relation(&self) -> bool {
+        match self {
+            Type::Relation(..) => true,
+            Type::Constant => false,
+        }
+    }
+
     pub fn pretty<'b, D, A>(&'b self, pp: &'b D) -> pretty::DocBuilder<'b, D, A>
     where
         D: pretty::DocAllocator<'b, A>,

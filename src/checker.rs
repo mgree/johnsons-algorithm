@@ -4,8 +4,8 @@ use std::iter::Extend;
 
 use crate::syntax::*;
 
+// TODO record polarity of reference
 // TODO use unification to globally figure out the types of each relation
-// TODO dive into each atom and find any symbols being used that are in the relations table
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error<'a> {
@@ -24,7 +24,9 @@ pub enum Error<'a> {
 #[derive(Debug)]
 pub struct Checker<'a> {
     program: &'a Program,
-    types: HashMap<Symbol, Type>,
+    pub types: HashMap<Symbol, Type>,
+    pub refs: HashMap<Symbol, HashSet<Symbol>>,
+    pub backrefs: HashMap<Symbol, HashSet<Symbol>>,
 }
 
 impl<'a> Checker<'a> {
@@ -32,6 +34,8 @@ impl<'a> Checker<'a> {
         let mut checker = Checker {
             program,
             types: HashMap::new(),
+            refs: HashMap::new(),
+            backrefs: HashMap::new(),
         };
 
         let errors = checker.check_program();
@@ -41,6 +45,35 @@ impl<'a> Checker<'a> {
         }
 
         Ok(checker)
+    }
+
+    pub fn show_refs(&self) -> String {
+        let mut s = String::new();
+        s.push_str("digraph {\n  ");
+
+        for (sym, ty) in &self.types {
+            if ty.is_relation() {
+                s.push_str(sym);
+                s.push_str("; ");
+            }
+        }
+
+        s.push_str("\n\n  // forward references\n");
+
+        for (src, tgts) in &self.refs {
+            s.push_str("  ");
+            s.push_str(src);
+            s.push_str(" -> { ");
+            for tgt in tgts {
+                s.push_str(tgt);
+                s.push(' ');
+            }
+            s.push_str("};\n");
+
+        }
+
+        s.push_str("}\n");
+        s
     }
 
     fn check_program(&mut self) -> Vec<Error<'a>> {
@@ -55,8 +88,8 @@ impl<'a> Checker<'a> {
         match c {
             Constraint::Rule(head, body) => {
                 // check the parts
-                let mut errors = self.check_atom(head);
-                errors.extend(body.iter().flat_map(|l| self.check_literal(l)));
+                let mut errors = self.check_atom(None, head);
+                errors.extend(body.iter().flat_map(|l| self.check_literal(Some(head), l)));
 
                 // positivity/safety checks
                 let mut all_vars = head.vars();
@@ -74,7 +107,10 @@ impl<'a> Checker<'a> {
             }
             Constraint::Integrity(ls) => {
                 // check the parts
-                let mut errors: Vec<_> = ls.iter().flat_map(|l| self.check_literal(l)).collect();
+                let mut errors: Vec<_> = ls
+                    .iter()
+                    .flat_map(|l| self.check_literal(None, l))
+                    .collect();
 
                 // positivity/safety checks
                 let all_vars: HashSet<_> = ls.iter().flat_map(|l| l.vars()).collect();
@@ -90,7 +126,7 @@ impl<'a> Checker<'a> {
             }
             Constraint::Fact(head) => {
                 // check the parts
-                let mut errors = self.check_atom(head);
+                let mut errors = self.check_atom(None, head);
 
                 // positivity/safety check (specialized)
                 errors.extend(head.vars().iter().map(|v| Error::VariableInFact(v, head)));
@@ -100,11 +136,17 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn check_literal(&mut self, l: &'a Literal) -> Vec<Error<'a>> {
-        self.check_atom(l.as_atom())
+    fn check_literal(&mut self, h: Option<&'a Atom>, l: &'a Literal) -> Vec<Error<'a>> {
+        self.check_atom(h, l.as_atom())
     }
 
-    fn check_atom(&mut self, a: &'a Atom) -> Vec<Error<'a>> {
+    fn check_atom(&mut self, h: Option<&'a Atom>, a: &'a Atom) -> Vec<Error<'a>> {
+        // record references
+        if let Some(h) = h {
+            self.record_reference(h, a);
+        }
+
+        // arity check
         let got_arity = a.args.len();
 
         let mut errors = match self.types.get(&a.f) {
@@ -112,13 +154,14 @@ impl<'a> Checker<'a> {
                 vec![Error::ArityMismatch(a, *expected_arity)]
             }
             Some(Type::Relation(..)) => vec![],
-            Some(t) => vec![Error::AppliedNonRelation(a, t.clone())],
+            Some(t) => vec![Error::AppliedNonRelation(a, *t)],
             None => {
                 self.types.insert(a.f.clone(), Type::Relation(got_arity));
                 vec![]
             }
         };
 
+        // check each term (type checks, etc.)
         errors.extend(a.args.iter().flat_map(|t| self.check_term(t)));
 
         errors
@@ -129,7 +172,7 @@ impl<'a> Checker<'a> {
             SimpleTerm::Variable(..) | SimpleTerm::Int(..) => vec![],
             SimpleTerm::Symbol(sym) => match self.types.get(sym) {
                 Some(t @ Type::Relation(..)) => {
-                    vec![Error::RelationAsConstant(sym, t.clone())]
+                    vec![Error::RelationAsConstant(sym, *t)]
                 }
                 Some(Type::Constant) => vec![],
                 None => {
@@ -138,6 +181,26 @@ impl<'a> Checker<'a> {
                 }
             },
         }
+    }
+
+    fn record_reference(&mut self, h: &'a Atom, a: &'a Atom) {
+        match self.refs.get_mut(&h.f) {
+            Some(atoms) => {
+                atoms.insert(a.f.clone());
+            }
+            None => {
+                self.refs.insert(h.f.clone(), HashSet::from([a.f.clone()]));
+            }
+        };
+
+        match self.backrefs.get_mut(&a.f) {
+            Some(atoms) => {
+                atoms.insert(h.f.clone());
+            }
+            None => {
+                self.refs.insert(a.f.clone(), HashSet::from([h.f.clone()]));
+            }
+        };
     }
 }
 
