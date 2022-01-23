@@ -4,7 +4,6 @@ use std::iter::Extend;
 
 use crate::syntax::*;
 
-// TODO record polarity of reference
 // TODO use unification to globally figure out the types of each relation
 
 #[derive(Debug, thiserror::Error)]
@@ -25,8 +24,8 @@ pub enum Error<'a> {
 pub struct Checker<'a> {
     program: &'a Program,
     pub types: HashMap<Symbol, Type>,
-    pub refs: HashMap<Symbol, HashSet<Symbol>>,
-    pub backrefs: HashMap<Symbol, HashSet<Symbol>>,
+    pub refs: HashMap<Symbol, HashSet<(Symbol, bool)>>,
+    pub backrefs: HashMap<Symbol, HashSet<(Symbol, bool)>>,
 }
 
 impl<'a> Checker<'a> {
@@ -59,17 +58,16 @@ impl<'a> Checker<'a> {
         }
 
         s.push_str("\n\n  // forward references\n");
-
         for (src, tgts) in &self.refs {
-            s.push_str("  ");
-            s.push_str(src);
-            s.push_str(" -> { ");
-            for tgt in tgts {
+            for (tgt, polarity) in tgts {
+                s.push_str("  ");
+                s.push_str(src);
+                s.push_str(" -> ");
                 s.push_str(tgt);
-                s.push(' ');
+                s.push_str(" [label=\"");
+                s.push(if *polarity { '+' } else { '-' });
+                s.push_str("\"];\n")
             }
-            s.push_str("};\n");
-
         }
 
         s.push_str("}\n");
@@ -88,7 +86,7 @@ impl<'a> Checker<'a> {
         match c {
             Constraint::Rule(head, body) => {
                 // check the parts
-                let mut errors = self.check_atom(None, head);
+                let mut errors = self.check_atom(head);
                 errors.extend(body.iter().flat_map(|l| self.check_literal(Some(head), l)));
 
                 // positivity/safety checks
@@ -126,7 +124,7 @@ impl<'a> Checker<'a> {
             }
             Constraint::Fact(head) => {
                 // check the parts
-                let mut errors = self.check_atom(None, head);
+                let mut errors = self.check_atom(head);
 
                 // positivity/safety check (specialized)
                 errors.extend(head.vars().iter().map(|v| Error::VariableInFact(v, head)));
@@ -137,15 +135,36 @@ impl<'a> Checker<'a> {
     }
 
     fn check_literal(&mut self, h: Option<&'a Atom>, l: &'a Literal) -> Vec<Error<'a>> {
-        self.check_atom(h, l.as_atom())
-    }
-
-    fn check_atom(&mut self, h: Option<&'a Atom>, a: &'a Atom) -> Vec<Error<'a>> {
         // record references
         if let Some(h) = h {
-            self.record_reference(h, a);
+            let a = l.as_atom();
+            let polarity = l.is_positive();
+
+            let forward = (a.f.clone(), polarity);
+            match self.refs.get_mut(&h.f) {
+                Some(atoms) => {
+                    atoms.insert(forward);
+                }
+                None => {
+                    self.refs.insert(h.f.clone(), HashSet::from([forward]));
+                }
+            };
+    
+            let backward = (h.f.clone(), polarity);
+            match self.backrefs.get_mut(&a.f) {
+                Some(atoms) => {
+                    atoms.insert(backward);
+                }
+                None => {
+                    self.backrefs.insert(a.f.clone(), HashSet::from([backward]));
+                }
+            };
         }
 
+        self.check_atom(l.as_atom())
+    }
+
+    fn check_atom(&mut self, a: &'a Atom) -> Vec<Error<'a>> {
         // arity check
         let got_arity = a.args.len();
 
@@ -181,26 +200,6 @@ impl<'a> Checker<'a> {
                 }
             },
         }
-    }
-
-    fn record_reference(&mut self, h: &'a Atom, a: &'a Atom) {
-        match self.refs.get_mut(&h.f) {
-            Some(atoms) => {
-                atoms.insert(a.f.clone());
-            }
-            None => {
-                self.refs.insert(h.f.clone(), HashSet::from([a.f.clone()]));
-            }
-        };
-
-        match self.backrefs.get_mut(&a.f) {
-            Some(atoms) => {
-                atoms.insert(h.f.clone());
-            }
-            None => {
-                self.refs.insert(a.f.clone(), HashSet::from([h.f.clone()]));
-            }
-        };
     }
 }
 
