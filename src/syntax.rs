@@ -134,7 +134,7 @@ impl Constraint {
 impl Literal {
     pub fn as_atom(&self) -> &Atom {
         match self {
-            Literal::Atom(a) | Literal::Not(a) => a
+            Literal::Atom(a) | Literal::Not(a) => a,
         }
     }
 
@@ -271,3 +271,27 @@ pretty_Display!(Literal);
 pretty_Display!(Atom);
 pretty_Display!(SimpleTerm);
 pretty_Display!(Type);
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn reach_not_grounded() {
+        let p = Program::parse(concat!(
+            "edge(a,b).\n",
+            "edge(a,c).\t\r\n",
+            "edge(b,d).  ",
+            "edge(c,d).\n",
+            "reach(X, Y) :- edge(X, Y).",
+            "reach(X, Z) :- edge(X, Y), reach(Y, Z)."
+        ))
+        .expect("ok parse");
+
+        assert!(!p.is_ground());
+        assert_eq!(
+            p.vars(),
+            HashSet::from([&"X".to_string(), &"Y".to_string(), &"Z".to_string()])
+        );
+    }
+}

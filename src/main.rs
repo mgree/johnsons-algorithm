@@ -67,5 +67,10 @@ fn main() {
         Ok(c) => c,
     };
 
-    println!("{}", c.show_refs())
+    println!("{}", c.show_refs());
+
+    if !p.is_ground() {
+        println!("program isn't grounded");
+        std::process::exit(4);
+    }
 }
