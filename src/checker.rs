@@ -65,6 +65,10 @@ impl<'a> Checker<'a> {
         Ok(checker)
     }
 
+    pub fn atom_number(&self, a: &Atom) -> Option<usize> {
+        self.atoms.binary_search(&a).ok()
+    }
+
     pub fn show_refs(&self) -> String {
         let mut s = String::new();
         s.push_str("digraph {\n  ");
