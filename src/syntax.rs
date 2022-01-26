@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::options::DEFAULT_WIDTH;
 
-lalrpop_mod!(#[allow(clippy)] parser);
+lalrpop_mod!(#[allow(clippy::all)] parser);
 
 #[derive(Debug)]
 pub struct Program(pub Vec<Constraint>);
