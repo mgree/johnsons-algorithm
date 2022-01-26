@@ -5,3 +5,5 @@ pub mod options;
 
 pub mod syntax;
 pub mod checker;
+
+pub mod circuits;
