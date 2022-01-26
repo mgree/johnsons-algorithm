@@ -12,7 +12,7 @@ pub type Cycle = Vec<V>;
 pub type Graph = BTreeMap<V, HashSet<V>>;
 
 struct JohnsonsAlgorithm {
-    b: Vec<Vec<V>>, // should this be HashMap<V, HashSet<V>> ?
+    b: HashMap<V, Vec<V>>,
     blocked: HashSet<V>,
     stack: Vec<V>,
     found: Vec<Cycle>,
@@ -20,7 +20,7 @@ struct JohnsonsAlgorithm {
 
 pub fn find(graph: &Graph) -> Vec<Cycle> {
     let n = graph.keys().last().expect("non-empty graph");
-    let b = vec![Vec::new(); *n];
+    let b = HashMap::from_iter(graph.keys().map(|v| (*v, Vec::new())));
     let blocked = HashSet::new();
     let stack = Vec::with_capacity((3 * n) / 4);
     let found = Vec::new();
@@ -40,8 +40,13 @@ impl JohnsonsAlgorithm {
     fn unblock(&mut self, u: V) {
         self.blocked.remove(&u);
 
-        while !self.b[u].is_empty() {
-            let w = self.b[u].pop().expect("non-empty");
+        while !self.b[&u].is_empty() {
+            let w = self
+                .b
+                .get_mut(&u)
+                .expect("valid blist entry")
+                .pop()
+                .expect("non-empty");
             if self.blocked.contains(&w) {
                 self.unblock(w)
             }
@@ -73,8 +78,8 @@ impl JohnsonsAlgorithm {
             self.unblock(v);
         } else if let Some(ws) = ak.get(&v) {
             for w in ws {
-                if !self.b[*w].contains(&v) {
-                    self.b[*w].push(v);
+                if !self.b[w].contains(&v) {
+                    self.b.get_mut(w).expect("valid blist entry").push(v);
                 }
             }
         }
@@ -88,8 +93,12 @@ impl JohnsonsAlgorithm {
 
         loop {
             // A_K is the strong component K with least vertex in {s, ...}
-            let ak = self.subgraph_from(graph, s); // TODO compute strong components using Tarjan's alg
 
+            // restrict graph
+            // TODO: winnow iteratively?
+            let ak = subgraph_from(graph, s);
+
+            // compute SCC
             let scc = match strongly_connected_components(&ak)
                 .into_iter()
                 .filter(|scc| scc.len() > 1)
@@ -99,7 +108,7 @@ impl JohnsonsAlgorithm {
                 Some(scc) => scc,
             };
 
-            // A_K is non_empty
+            // A_K is non_empty!
 
             // s is least vertex in vertices of A_K
             let mut ak_vertices = scc.iter();
@@ -107,11 +116,11 @@ impl JohnsonsAlgorithm {
 
             // clear blocked, B(i) for each i in V_K
             self.blocked.remove(&s);
-            self.b[s].clear();
+            self.b.get_mut(&s).expect("valid blist entry").clear();
 
             for i in ak_vertices {
                 self.blocked.remove(i);
-                self.b[*i].clear();
+                self.b.get_mut(i).expect("valid blist entry").clear();
             }
 
             // L3
@@ -119,9 +128,129 @@ impl JohnsonsAlgorithm {
             s += 1;
         }
     }
+}
 
-    fn subgraph_from(&self, graph: &Graph, s: V) -> Graph {
-        todo!()
+fn subgraph_from(graph: &Graph, s: V) -> Graph {
+    graph
+        .iter()
+        .filter_map(|(v, ws)| {
+            if v >= &s {
+                Some((*v, ws.iter().filter(|w| *w >= &s).copied().collect()))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod test_johnsons {
+    use super::*;
+
+    fn has_cycle(cycles: &[Cycle], mut c: Cycle) {
+        let mut rotations = HashSet::new();
+
+        assert!(!c.is_empty());
+
+        loop {
+            if rotations.contains(&c) {
+                break;
+            }
+
+            // save current rotation
+            rotations.insert(c.clone());
+
+            // beginning and ending should be the same
+
+            c.pop(); // drop the end
+            c.rotate_right(1); // rotate
+            c.push(c[0]); // put a new end on
+        }
+
+        assert_eq!(cycles.iter().filter(|c| rotations.contains(*c)).count(), 1);
+    }
+
+    // tests cribbed from Benedikt Linse's impl at https://github.com/1123/johnson
+    // under Apache 2.0 license
+
+    #[test]
+    fn two_binary_cycles() {
+        let mut g = BTreeMap::new();
+
+        g.insert(1, HashSet::from([3]));
+        g.insert(3, HashSet::from([1, 2]));
+        g.insert(2, HashSet::from([3]));
+
+        let cycles = find(&g);
+        assert_eq!(cycles.len(), 2);
+
+        has_cycle(&cycles, vec![3, 1, 3]); // deliberately using the wrong order to exercise has_cycle
+        has_cycle(&cycles, vec![2, 3, 2]);
+    }
+
+    #[test]
+    fn one_binary_one_ternary_cycle() {
+        let mut g = BTreeMap::new();
+
+        g.insert(1, HashSet::from([2]));
+        g.insert(2, HashSet::from([1, 3]));
+        g.insert(3, HashSet::new());
+        g.insert(4, HashSet::from([5]));
+        g.insert(5, HashSet::from([6]));
+        g.insert(6, HashSet::from([4]));
+
+        let cycles = find(&g);
+        assert_eq!(cycles.len(), 2);
+
+        has_cycle(&cycles, vec![1, 2, 1]);
+        has_cycle(&cycles, vec![4, 5, 6, 4]);
+    }
+
+    #[test]
+    fn one_binary_cycle() {
+        let g = BTreeMap::from([
+            (1, HashSet::from([2])),
+            (2, HashSet::from([1])),
+            (3, HashSet::from([1, 2])),
+        ]);
+
+        let cycles = find(&g);
+        assert_eq!(cycles.len(), 1);
+
+        has_cycle(&cycles, vec![1, 2, 1]);
+    }
+
+    #[test]
+    fn two_overlapping_cycles() {
+        let g = BTreeMap::from([
+            (1, HashSet::from([3])),
+            (2, HashSet::from([1])),
+            (3, HashSet::from([1, 2])),
+        ]);
+
+        let cycles = find(&g);
+        eprintln!("{:?}", cycles);
+        assert_eq!(cycles.len(), 2);
+
+        has_cycle(&cycles, vec![1, 3, 1]);
+        has_cycle(&cycles, vec![2, 1, 3, 2]); // deliberate rotation
+    }
+
+    #[test]
+    fn subgraph() {
+        let g = BTreeMap::from([
+            (1, HashSet::from([3])),
+            (3, HashSet::from([1, 2])),
+            (2, HashSet::from([3])),
+        ]);
+
+        let sub = subgraph_from(&g, 2);
+        assert!(!sub.contains_key(&1));
+        assert!(sub.contains_key(&2));
+        assert!(sub.contains_key(&3));
+
+        assert_eq!(sub.get(&2).expect("edges"), &HashSet::from([3]));
+        assert_eq!(sub.get(&3).expect("edges"), &HashSet::from([2]));
     }
 }
 
@@ -202,11 +331,12 @@ impl TarjansAlgorithm {
 }
 
 #[cfg(test)]
-mod test {
+mod test_tarjans {
     use super::*;
 
-    // test cribbed from Benedikt Line's impl at https://github.com/1123/johnson
+    // tests cribbed from Benedikt Linse's impl at https://github.com/1123/johnson
     // under Apache 2.0 license
+
     #[test]
     fn two_node_circuit() {
         let mut g = BTreeMap::new();
