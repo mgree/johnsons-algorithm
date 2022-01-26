@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Extend;
@@ -26,15 +27,33 @@ pub struct Checker<'a> {
     pub types: HashMap<Symbol, Type>,
     pub refs: HashMap<Symbol, HashSet<(Symbol, bool)>>,
     pub backrefs: HashMap<Symbol, HashSet<(Symbol, bool)>>,
+    // TODO: build the backreference graph on ATOMS using this as a guide
+    pub atoms: Vec<&'a Atom>,
 }
 
 impl<'a> Checker<'a> {
     pub fn new(program: &'a Program) -> Result<Checker<'_>, Vec<Error<'_>>> {
+        // using btrees for reliable atom ordering
+        let all_atoms: BTreeSet<_> = program
+            .0
+            .iter()
+            .flat_map::<BTreeSet<&'a Atom>, _>(|c| match c {
+                Constraint::Rule(head, body) => body
+                    .iter()
+                    .map(|l| l.as_atom())
+                    .chain(std::iter::once(head))
+                    .collect(),
+                Constraint::Fact(head) => std::iter::once(head).collect(),
+                Constraint::Integrity(body) => body.iter().map(|l| l.as_atom()).collect(),
+            })
+            .collect();
+
         let mut checker = Checker {
             program,
             types: HashMap::new(),
             refs: HashMap::new(),
             backrefs: HashMap::new(),
+            atoms: all_atoms.into_iter().collect(),
         };
 
         let errors = checker.check_program();
@@ -149,7 +168,6 @@ impl<'a> Checker<'a> {
                     self.refs.insert(h.f.clone(), HashSet::from([forward]));
                 }
             };
-    
             let backward = (h.f.clone(), polarity);
             match self.backrefs.get_mut(&a.f) {
                 Some(atoms) => {

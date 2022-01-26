@@ -73,4 +73,6 @@ fn main() {
         println!("program isn't grounded");
         std::process::exit(4);
     }
+
+    //let graph = BTreeMap::from(c.atoms.iter().enumerate().map(|(i, a)| (i, c.backrefs.get()));
 }
