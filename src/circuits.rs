@@ -19,10 +19,9 @@ struct JohnsonsAlgorithm {
 }
 
 pub fn find(graph: &Graph) -> Vec<Cycle> {
-    let n = graph.keys().last().expect("non-empty graph");
     let b = HashMap::from_iter(graph.keys().map(|v| (*v, Vec::new())));
     let blocked = HashSet::new();
-    let stack = Vec::with_capacity((3 * n) / 4);
+    let stack = Vec::with_capacity(1 + (3 * graph.len()) / 4);
     let found = Vec::new();
     let mut ja = JohnsonsAlgorithm {
         b,
