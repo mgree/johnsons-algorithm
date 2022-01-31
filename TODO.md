@@ -1,0 +1,1 @@
+- [ ] global symbol internment and atom numbering during parsing
