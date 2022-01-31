@@ -26,8 +26,42 @@ pub enum Literal {
 pub type IAtom = usize;
 
 impl<'a> Program<'a> {
-    pub fn clark_completion(&self) -> Formula<&'a syntax::Atom> {
-        todo!()
+    /// Clark completion of an interned program.
+    ///
+    /// All models satisfy all of the resulting formulae (stable models will
+    /// also satisfy loop formulae for each circuit in the graph).
+    pub fn clark_completion(&self) -> HashSet<Formula<&'a syntax::Atom>> {
+        let mut comp = vec![Formula::False; self.atoms.len()];
+        let mut integrity = HashSet::new();
+
+        for c in self.constraints.iter() {
+            match c {
+                Constraint::Rule(head, body) => comp[*head].or_mut(Formula::ands(
+                    body.iter().map(|l| self.formula_of_literal(l)),
+                )),
+                Constraint::Integrity(body) => {
+                    integrity.insert(Formula::not(Formula::ands(
+                        body.iter().map(|l| self.formula_of_literal(l)),
+                    )));
+                }
+                Constraint::Fact(..) => (),
+            }
+        }
+
+        integrity.extend(
+            comp.into_iter()
+                .enumerate()
+                .map(|(h, ls)| Formula::iff(self.atoms[h].into(), ls)),
+        );
+
+        integrity
+    }
+
+    fn formula_of_literal(&self, l: &Literal) -> Formula<&'a syntax::Atom> {
+        match l {
+            Literal::Not(a) => Formula::not(self.atoms[*a].into()),
+            Literal::Atom(a) => self.atoms[*a].into(),
+        }
     }
 
     /// Positive dependencies of _atoms_:
@@ -54,8 +88,7 @@ impl<'a> Program<'a> {
         backrefs.into_iter().enumerate().collect()
     }
 
-    /// Given a logic program P (`self`) and a loop (`cycle`), returns the literals G_ij and atoms
-    // TODO: refactor to use some notion of formula
+    /// Given a logic program P (`self`) and a loop (`cycle`), returns the corresponding loop formula
     pub fn loop_formula(&self, cycle: &[IAtom]) -> Formula<&'a syntax::Atom> {
         let mut neg = Vec::new();
 
@@ -276,6 +309,35 @@ impl<'a> std::fmt::Display for Program<'a> {
 mod test_partition {
     use super::*;
     use crate::circuits;
+
+    #[test]
+    fn lin_zhao_clark_eg_pg118() {
+        let p = syntax::Program::parse("a :- b, c, not d. a :- b, not c, not d. :- b, c, not d.")
+            .expect("valid parse");
+        let p = Program::from(&p);
+
+        let a = &syntax::Atom::from("a", &[]);
+        let b = &syntax::Atom::from("b", &[]);
+        let c = &syntax::Atom::from("c", &[]);
+        let d = &syntax::Atom::from("d", &[]);
+
+        assert_eq!(
+            p.clark_completion(),
+            HashSet::from([
+                Formula::iff(
+                    a.into(),
+                    Formula::or(
+                        Formula::ands([b.into(), c.into(), Formula::not(d.into())]),
+                        Formula::ands([b.into(), Formula::not(c.into()), Formula::not(d.into())])
+                    )
+                ),
+                Formula::not(b.into()),
+                Formula::not(c.into()),
+                Formula::not(d.into()),
+                Formula::not(Formula::ands([b.into(), c.into(), Formula::not(d.into())]))
+            ])
+        );
+    }
 
     #[test]
     fn lin_zhao_eg_text_p119() {

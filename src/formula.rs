@@ -1,4 +1,4 @@
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, std::hash::Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Formula<A> {
     Proposition(A),
     And(Box<Formula<A>>, Box<Formula<A>>),
@@ -11,23 +11,59 @@ pub enum Formula<A> {
 }
 
 impl<A> Formula<A> {
-    pub fn implies(premise: Formula<A>, conclusion: Formula<A>) -> Formula<A> {
-        Formula::Implies(Box::new(premise), Box::new(conclusion))
+    pub fn implies(phi: Formula<A>, psi: Formula<A>) -> Formula<A> {
+        match (phi, psi) {
+            (Formula::True, psi) => psi,
+            (Formula::False, _) => Formula::True,
+            (_, Formula::True) => Formula::True,
+            (phi, Formula::False) => Formula::not(phi),
+            (phi, psi) => Formula::Implies(Box::new(phi), Box::new(psi)),
+        }
+    }
+
+    pub fn iff(phi: Formula<A>, psi: Formula<A>) -> Formula<A> {
+        match (phi, psi) {
+            (Formula::True, f) | (f, Formula::True) => f,
+            (Formula::False, f) | (f, Formula::False) => Formula::not(f),
+            (phi, psi) => Formula::Iff(Box::new(phi), Box::new(psi)),
+        }
+    }
+
+    pub fn or(phi: Formula<A>, psi: Formula<A>) -> Formula<A> {
+        match (phi, psi) {
+            (Formula::True, _) | (_, Formula::True) => Formula::True,
+            (Formula::False, f) | (f, Formula::False) => f,
+            (phi, psi) => Formula::Or(Box::new(phi), Box::new(psi)),
+        }
     }
 
     pub fn and(phi: Formula<A>, psi: Formula<A>) -> Formula<A> {
-        Formula::And(Box::new(phi), Box::new(psi))
+        match (phi, psi) {
+            (Formula::True, f) | (f, Formula::True) => f,
+            (Formula::False, _) | (_, Formula::False) => Formula::False,
+            (phi, psi) => Formula::And(Box::new(phi), Box::new(psi)),
+        }
     }
 
     #[allow(clippy::should_implement_trait)]
     pub fn not(phi: Formula<A>) -> Formula<A> {
-        Formula::Not(Box::new(phi))
+        match phi {
+            Formula::True => Formula::False,
+            Formula::False => Formula::True,
+            Formula::Not(psi) => *psi,
+            phi => Formula::Not(Box::new(phi)),
+        }
     }
 
     pub fn ands<T: IntoIterator<Item = Formula<A>>>(phis: T) -> Formula<A> {
         phis.into_iter()
             .reduce(|phi, psi| Formula::and(phi, psi))
             .unwrap_or(Formula::True)
+    }
+
+    pub fn or_mut(&mut self, phi: Self) {
+        let old = std::mem::replace(self, Formula::False);
+        *self = Formula::or(old, phi)
     }
 }
 
@@ -36,7 +72,7 @@ impl<A: std::fmt::Display> Formula<A> {
     where
         D: pretty::DocAllocator<'b, B>,
         D::Doc: Clone,
-        B: Clone
+        B: Clone,
     {
         self.pretty_imp(pp)
     }
@@ -54,7 +90,7 @@ impl<A: std::fmt::Display> Formula<A> {
                     pp.text("⇒"),
                     phi2.pretty_or(pp).nest(2).group(),
                 ],
-                pp.line(),
+                pp.space(),
             ),
             Formula::Iff(phi1, phi2) => pp.intersperse(
                 [
@@ -62,7 +98,7 @@ impl<A: std::fmt::Display> Formula<A> {
                     pp.text("≡"),
                     phi2.pretty_or(pp).nest(2).group(),
                 ],
-                pp.line(),
+                pp.space(),
             ),
             _ => self.pretty_or(pp),
         }
@@ -72,7 +108,7 @@ impl<A: std::fmt::Display> Formula<A> {
     where
         D: pretty::DocAllocator<'b, B>,
         D::Doc: Clone,
-        B: Clone
+        B: Clone,
     {
         match self {
             Formula::Or(phi1, phi2) => pp.intersperse(
@@ -81,7 +117,7 @@ impl<A: std::fmt::Display> Formula<A> {
                     pp.text("∨"),
                     phi2.pretty(pp).nest(2).group(),
                 ],
-                pp.line(),
+                pp.space(),
             ),
             _ => self.pretty_and(pp),
         }
@@ -96,11 +132,11 @@ impl<A: std::fmt::Display> Formula<A> {
         match self {
             Formula::And(phi1, phi2) => pp.intersperse(
                 [
-                    phi1.pretty_not(pp).nest(2).group(),
+                    phi1.pretty_and(pp).nest(2).group(),
                     pp.text("∧"),
-                    phi2.pretty_not(pp).nest(2).group(),
+                    phi2.pretty_and(pp).nest(2).group(),
                 ],
-                pp.line(),
+                pp.space(),
             ),
             _ => self.pretty_not(pp),
         }

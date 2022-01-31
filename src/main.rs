@@ -82,6 +82,15 @@ fn main() {
 
     let circuits = logroll::circuits::find(&graph);
 
+    println!(
+        "clark completion: {}",
+        p.clark_completion()
+            .into_iter()
+            .map(|phi| phi.to_string())
+            .collect::<Vec<_>>()
+            .join(",\n")
+    );
+
     info!("found {} circuits", circuits.len());
     for c in circuits {
         let c_s = c

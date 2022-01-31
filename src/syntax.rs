@@ -24,13 +24,13 @@ pub enum Literal {
     Not(Atom),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, std::hash::Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Atom {
     pub f: Symbol,
     pub args: Vec<SimpleTerm>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, std::hash::Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SimpleTerm {
     Symbol(Symbol),
     Variable(Variable),
@@ -280,7 +280,6 @@ impl Type {
         }
     }
 }
-
 
 macro_rules! pretty_Display {
     ($T:ty) => {
