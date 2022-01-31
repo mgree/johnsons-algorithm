@@ -174,6 +174,13 @@ impl Literal {
 }
 
 impl Atom {
+    pub fn from<T: AsRef<str>>(f: T, args: &[SimpleTerm]) -> Atom {
+        Atom {
+            f: f.as_ref().to_string(),
+            args: Vec::from(args),
+        }
+    }
+
     pub fn is_ground(&self) -> bool {
         self.args.iter().all(|t| t.is_ground())
     }
