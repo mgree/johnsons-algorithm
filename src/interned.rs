@@ -211,6 +211,8 @@ impl Literal {
 
 impl<'a> From<&'a syntax::Program> for Program<'a> {
     fn from(p: &'a syntax::Program) -> Program<'a> {
+        debug_assert!(p.is_ground(), "tried to intern non-ground program");
+
         let atoms = p.atoms();
 
         // avoid annoying move rules around functions
