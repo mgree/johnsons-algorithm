@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::collections::HashSet;
 
 use crate::options::DEFAULT_WIDTH;
@@ -53,6 +54,23 @@ pub type Variable = String;
 impl Program {
     pub fn is_ground(&self) -> bool {
         self.0.iter().all(|c| c.is_ground())
+    }
+
+    pub fn atoms(&self) -> Vec<&Atom> {
+        // using btrees for reliable atom ordering
+        let all_atoms: BTreeSet<_> = self
+            .0
+            .iter()
+            .flat_map::<BTreeSet<&Atom>, _>(|c| match c {
+                Constraint::Rule(head, body) => std::iter::once(head)
+                    .chain(body.iter().map(|l| l.as_atom()))
+                    .collect(),
+                Constraint::Fact(head) => std::iter::once(head).collect(),
+                Constraint::Integrity(body) => body.iter().map(|l| l.as_atom()).collect(),
+            })
+            .collect();
+
+        all_atoms.into_iter().collect()
     }
 
     pub fn vars(&self) -> HashSet<&Variable> {
@@ -275,6 +293,7 @@ macro_rules! pretty_Display {
         }
     };
 }
+
 pretty_Display!(Program);
 pretty_Display!(Constraint);
 pretty_Display!(Literal);

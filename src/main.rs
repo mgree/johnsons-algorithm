@@ -1,12 +1,12 @@
 extern crate logroll;
 
-use std::collections::BTreeMap;
 use std::io::Read;
 
 use log::{error, info};
 
 use logroll::checker::Checker;
-use logroll::syntax::*;
+use logroll::interned;
+use logroll::syntax;
 
 fn main() {
     let config = clap::App::new(env!("CARGO_PKG_NAME"))
@@ -49,7 +49,7 @@ fn main() {
         std::process::exit(4);
     }
 
-    let p = Program::parse(&input).unwrap_or_else(|e| {
+    let p = syntax::Program::parse(&input).unwrap_or_else(|e| {
         error!("Parse error:\n{}", e);
         std::process::exit(2);
     });
@@ -75,23 +75,39 @@ fn main() {
         std::process::exit(4);
     }
 
-    let graph = checker
-        .backrefs
-        .iter()
-        .enumerate()
-        .map(|(h, ls)| (h, ls.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let p = interned::Program::from(&p);
+
+    let graph = p.graph();
 
     let circuits = logroll::circuits::find(&graph);
 
     info!("found {} circuits", circuits.len());
     for c in circuits {
-        println!(
-            "{}",
-            c.into_iter()
-                .map(|i| checker.atoms[i].to_string())
-                .collect::<Vec<_>>()
-                .join(" -> ")
-        );
+        let c_s = c
+            .iter()
+            .map(|i| checker.atoms[*i].to_string())
+            .collect::<Vec<_>>()
+            .join(" -> ");
+
+        println!("{} yields the loop formula:", c_s);
+
+        let (premises, conclusion) = p.loop_formula(&c);
+
+        let premise_s = premises
+            .into_iter()
+            .map(|l| match l {
+                interned::Literal::Not(a) => format!("{}", p.atoms[a]),
+                interned::Literal::Atom(a) => format!("¬{}", p.atoms[a]),
+            })
+            .collect::<Vec<_>>()
+            .join(" ∧ ");
+
+        let conclusion_s = conclusion
+            .into_iter()
+            .map(|a| format!("¬{}", p.atoms[a]))
+            .collect::<Vec<_>>()
+            .join(" ∧ ");
+
+        println!("  {} ⇒ {}", premise_s, conclusion_s);
     }
 }

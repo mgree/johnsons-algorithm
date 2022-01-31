@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::Extend;
@@ -33,42 +32,17 @@ pub struct Checker<'a> {
     ///
     /// creates an edge from `a` to `b` and `c`.
     pub refs: HashMap<Symbol, HashSet<(Symbol, bool)>>,
-    /// Backward positive references of _atoms_:
-    ///
-    /// ```asp
-    /// a(X,Y) :- b(X), c(Y)
-    ///
-    /// creates edges from `b(X)` and `c(Y)` to `a(X,Y)`
-    ///
-    /// This graph is for building loop formulae. It probably only makes sense
-    /// on grounded programs.
-    ///
-    /// NB it uses atom numbering, not references.
-    pub backrefs: Vec<HashSet<usize>>, // TODO might be sparse?
     pub atoms: Vec<&'a Atom>,
 }
 
 impl<'a> Checker<'a> {
     pub fn new(program: &'a Program) -> Result<Checker<'_>, Vec<Error<'_>>> {
-        // using btrees for reliable atom ordering
-        let all_atoms: BTreeSet<_> = program
-            .0
-            .iter()
-            .flat_map::<BTreeSet<&'a Atom>, _>(|c| match c {
-                Constraint::Rule(head, body) => std::iter::once(head)
-                    .chain(body.iter().map(|l| l.as_atom()))
-                    .collect(),
-                Constraint::Fact(head) => std::iter::once(head).collect(),
-                Constraint::Integrity(body) => body.iter().map(|l| l.as_atom()).collect(),
-            })
-            .collect();
-        let atoms: Vec<_> = all_atoms.into_iter().collect();
+        let atoms: Vec<_> = program.atoms();
 
         let mut checker = Checker {
             program,
             types: HashMap::new(),
             refs: HashMap::new(),
-            backrefs: vec![HashSet::new(); atoms.len()],
             atoms,
         };
 
@@ -192,12 +166,6 @@ impl<'a> Checker<'a> {
                     self.refs.insert(h.f.clone(), HashSet::from([forward]));
                 }
             };
-
-            if l.is_positive() {
-                let h_num = self.atom_number(h);
-                let l_num = self.atom_number(l.as_atom());
-                self.backrefs[h_num].insert(l_num);
-            }
         }
 
         self.check_atom(l.as_atom())
