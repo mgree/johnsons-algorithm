@@ -25,9 +25,26 @@ pub enum Error<'a> {
 pub struct Checker<'a> {
     program: &'a Program,
     pub types: HashMap<Symbol, Type>,
+    /// Forward references of _rules_:
+    ///
+    /// ```asp
+    /// a(X,Y) :- b(X), c(Y).
+    /// ```
+    ///
+    /// creates an edge from `a` to `b` and `c`.
     pub refs: HashMap<Symbol, HashSet<(Symbol, bool)>>,
-    pub backrefs: HashMap<Symbol, HashSet<(Symbol, bool)>>,
-    // TODO: build the backreference graph on ATOMS using this as a guide
+    /// Backward positive references of _atoms_:
+    ///
+    /// ```asp
+    /// a(X,Y) :- b(X), c(Y)
+    ///
+    /// creates edges from `b(X)` and `c(Y)` to `a(X,Y)`
+    ///
+    /// This graph is for building loop formulae. It probably only makes sense
+    /// on grounded programs.
+    ///
+    /// NB it uses atom numbering, not references.
+    pub backrefs: Vec<HashSet<usize>>, // TODO might be sparse?
     pub atoms: Vec<&'a Atom>,
 }
 
@@ -38,22 +55,21 @@ impl<'a> Checker<'a> {
             .0
             .iter()
             .flat_map::<BTreeSet<&'a Atom>, _>(|c| match c {
-                Constraint::Rule(head, body) => body
-                    .iter()
-                    .map(|l| l.as_atom())
-                    .chain(std::iter::once(head))
+                Constraint::Rule(head, body) => std::iter::once(head)
+                    .chain(body.iter().map(|l| l.as_atom()))
                     .collect(),
                 Constraint::Fact(head) => std::iter::once(head).collect(),
                 Constraint::Integrity(body) => body.iter().map(|l| l.as_atom()).collect(),
             })
             .collect();
+        let atoms: Vec<_> = all_atoms.into_iter().collect();
 
         let mut checker = Checker {
             program,
             types: HashMap::new(),
             refs: HashMap::new(),
-            backrefs: HashMap::new(),
-            atoms: all_atoms.into_iter().collect(),
+            backrefs: vec![HashSet::new(); atoms.len()],
+            atoms,
         };
 
         let errors = checker.check_program();
@@ -65,8 +81,12 @@ impl<'a> Checker<'a> {
         Ok(checker)
     }
 
-    pub fn atom_number(&self, a: &Atom) -> Option<usize> {
+    pub fn lookup_atom(&self, a: &Atom) -> Option<usize> {
         self.atoms.binary_search(&a).ok()
+    }
+
+    pub fn atom_number(&self, a: &Atom) -> usize {
+        self.lookup_atom(a).expect("known atom")
     }
 
     pub fn show_refs(&self) -> String {
@@ -172,15 +192,12 @@ impl<'a> Checker<'a> {
                     self.refs.insert(h.f.clone(), HashSet::from([forward]));
                 }
             };
-            let backward = (h.f.clone(), polarity);
-            match self.backrefs.get_mut(&a.f) {
-                Some(atoms) => {
-                    atoms.insert(backward);
-                }
-                None => {
-                    self.backrefs.insert(a.f.clone(), HashSet::from([backward]));
-                }
-            };
+
+            if l.is_positive() {
+                let h_num = self.atom_number(h);
+                let l_num = self.atom_number(l.as_atom());
+                self.backrefs[h_num].insert(l_num);
+            }
         }
 
         self.check_atom(l.as_atom())

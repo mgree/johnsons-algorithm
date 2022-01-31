@@ -1,11 +1,12 @@
 extern crate logroll;
 
+use std::collections::BTreeMap;
 use std::io::Read;
 
-use log::{error,info};
+use log::{error, info};
 
-use logroll::syntax::*;
 use logroll::checker::Checker;
+use logroll::syntax::*;
 
 fn main() {
     let config = clap::App::new(env!("CARGO_PKG_NAME"))
@@ -55,24 +56,42 @@ fn main() {
 
     info!("% parsed\n{}", p);
 
-    let c = Checker::new(&p);
+    let checker = Checker::new(&p);
 
-    let c = match c {
+    let checker = match checker {
         Err(errs) => {
             for err in errs {
                 error!("Error: {}", err);
             }
             std::process::exit(3);
         }
-        Ok(c) => c,
+        Ok(checker) => checker,
     };
 
-    println!("{}", c.show_refs());
+    println!("{}", checker.show_refs());
 
     if !p.is_ground() {
         println!("program isn't grounded");
         std::process::exit(4);
     }
 
-    //let graph = BTreeMap::from(c.atoms.iter().enumerate().map(|(i, a)| (i, c.backrefs.get()));
+    let graph = checker
+        .backrefs
+        .iter()
+        .enumerate()
+        .map(|(h, ls)| (h, ls.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    let circuits = logroll::circuits::find(&graph);
+
+    info!("found {} circuits", circuits.len());
+    for c in circuits {
+        println!(
+            "{}",
+            c.into_iter()
+                .map(|i| checker.atoms[i].to_string())
+                .collect::<Vec<_>>()
+                .join(" -> ")
+        );
+    }
 }
