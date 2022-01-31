@@ -68,6 +68,7 @@ fn main() {
         Ok(checker) => checker,
     };
 
+    // TODO put this behind a flag
     println!("{}", checker.show_refs());
 
     if !p.is_ground() {
@@ -91,23 +92,7 @@ fn main() {
 
         println!("{} yields the loop formula:", c_s);
 
-        let (premises, conclusion) = p.loop_formula(&c);
-
-        let premise_s = premises
-            .into_iter()
-            .map(|l| match l {
-                interned::Literal::Not(a) => format!("{}", p.atoms[a]),
-                interned::Literal::Atom(a) => format!("¬{}", p.atoms[a]),
-            })
-            .collect::<Vec<_>>()
-            .join(" ∧ ");
-
-        let conclusion_s = conclusion
-            .into_iter()
-            .map(|a| format!("¬{}", p.atoms[a]))
-            .collect::<Vec<_>>()
-            .join(" ∧ ");
-
-        println!("  {} ⇒ {}", premise_s, conclusion_s);
+        let phi = p.loop_formula(&c);
+        println!("  {}", phi);
     }
 }

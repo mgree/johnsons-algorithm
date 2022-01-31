@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::circuits::Graph;
+use crate::formula::Formula;
 use crate::syntax;
 
 #[derive(Clone, Debug)]
@@ -11,20 +12,24 @@ pub struct Program<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Constraint {
-    Rule(Atom, Vec<Literal>),
-    Fact(Atom),
+    Rule(IAtom, Vec<Literal>),
+    Fact(IAtom),
     Integrity(Vec<Literal>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Literal {
-    Atom(Atom),
-    Not(Atom),
+    Atom(IAtom),
+    Not(IAtom),
 }
 
-pub type Atom = usize;
+pub type IAtom = usize;
 
 impl<'a> Program<'a> {
+    pub fn clark_completion(&self) -> Formula<&'a syntax::Atom> {
+        todo!()
+    }
+
     /// Positive dependencies of _atoms_:
     ///
     /// ```asp
@@ -50,7 +55,8 @@ impl<'a> Program<'a> {
     }
 
     /// Given a logic program P (`self`) and a loop (`cycle`), returns the literals G_ij and atoms
-    pub fn loop_formula(&self, cycle: &[Atom]) -> (Vec<Literal>, Vec<Atom>) {
+    // TODO: refactor to use some notion of formula
+    pub fn loop_formula(&self, cycle: &[IAtom]) -> Formula<&'a syntax::Atom> {
         let mut neg = Vec::new();
 
         for constraint in self.constraints.iter() {
@@ -75,11 +81,21 @@ impl<'a> Program<'a> {
         assert_eq!(cycle[0], cycle[cycle.len() - 1]);
         cycle.pop();
 
-        (neg, cycle)
+        Formula::implies(
+            Formula::ands(neg.into_iter().map(|l| match l {
+                Literal::Not(a) => Formula::Proposition(self.atoms[a]),
+                Literal::Atom(a) => Formula::not(Formula::Proposition(self.atoms[a])),
+            })),
+            Formula::ands(
+                cycle
+                    .into_iter()
+                    .map(|a| Formula::not(Formula::Proposition(self.atoms[a]))),
+            ),
+        )
     }
 
     /// Computes R^+ and R^- from Lin and Zhao (AI 2004).
-    pub fn loop_partition(&self, cycle: &[Atom]) -> (Program, Program) {
+    pub fn loop_partition(&self, cycle: &[IAtom]) -> (Program, Program) {
         let mut pos = Program {
             constraints: Vec::new(),
             atoms: self.atoms.clone(),
@@ -190,7 +206,7 @@ impl<'a> Program<'a> {
         }
     }
 
-    pub fn pretty_atom<'b, D, A>(&'b self, pp: &'b D, a: Atom) -> pretty::DocBuilder<'b, D, A>
+    pub fn pretty_atom<'b, D, A>(&'b self, pp: &'b D, a: IAtom) -> pretty::DocBuilder<'b, D, A>
     where
         D: pretty::DocAllocator<'b, A>,
         D::Doc: Clone,
@@ -201,7 +217,7 @@ impl<'a> Program<'a> {
 }
 
 impl Literal {
-    pub fn as_positive_atom(&self) -> Option<Atom> {
+    pub fn as_positive_atom(&self) -> Option<IAtom> {
         match self {
             Literal::Atom(a) => Some(*a),
             Literal::Not(..) => None,
@@ -331,31 +347,29 @@ mod test_partition {
         // the asserts below are very much order dependent!!!
 
         // circuit 0
-        let (premises, conclusion) = p.loop_formula(&circuits[0]);
-        assert_eq!(premises.len(), 1);
-        match premises[0] {
-            Literal::Not(a) => assert_eq!(p.atoms[a], &syntax::Atom::from("c", &[])),
-            Literal::Atom(..) => panic!("expected not"),
-        }
-
-        assert_eq!(conclusion.len(), 2);
+        let phi0 = p.loop_formula(&circuits[0]);
         assert_eq!(
-            conclusion.iter().map(|a| p.atoms[*a]).collect::<Vec<_>>(),
-            vec![&syntax::Atom::from("a", &[]), &syntax::Atom::from("b", &[]),]
+            phi0,
+            Formula::implies(
+                Formula::Proposition(&syntax::Atom::from("c", &[])),
+                Formula::and(
+                    Formula::not(Formula::Proposition(&syntax::Atom::from("a", &[]))),
+                    Formula::not(Formula::Proposition(&syntax::Atom::from("b", &[])))
+                )
+            )
         );
 
         // circuit 1
-        let (premises, conclusion) = p.loop_formula(&circuits[1]);
-        assert_eq!(premises.len(), 1);
-        match premises[0] {
-            Literal::Not(a) => assert_eq!(p.atoms[a], &syntax::Atom::from("a", &[])),
-            Literal::Atom(..) => panic!("expected not"),
-        }
-
-        assert_eq!(conclusion.len(), 2);
+        let phi1 = p.loop_formula(&circuits[1]);
         assert_eq!(
-            conclusion.iter().map(|a| p.atoms[*a]).collect::<Vec<_>>(),
-            vec![&syntax::Atom::from("c", &[]), &syntax::Atom::from("d", &[]),]
+            phi1,
+            Formula::implies(
+                Formula::Proposition(&syntax::Atom::from("a", &[])),
+                Formula::and(
+                    Formula::not(Formula::Proposition(&syntax::Atom::from("c", &[]))),
+                    Formula::not(Formula::Proposition(&syntax::Atom::from("d", &[])))
+                )
+            )
         );
     }
 }

@@ -281,6 +281,7 @@ impl Type {
     }
 }
 
+
 macro_rules! pretty_Display {
     ($T:ty) => {
         impl std::fmt::Display for $T {
