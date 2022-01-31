@@ -11,6 +11,114 @@ pub type Cycle = Vec<V>;
 // invariant: every vertex should have an entry, even if its empty
 pub type Graph = BTreeMap<V, HashSet<V>>;
 
+use crate::checker::Checker;
+use crate::syntax::{Constraint, Program};
+
+impl Program {
+    pub fn loop_partition(&self, checker: &Checker, cycle: &[V]) -> (Program, Program) {
+        let mut pos = Program(Vec::new());
+        let mut neg = Program(Vec::new());
+
+        for constraint in self.0.iter() {
+            match constraint {
+                Constraint::Rule(head, ls) => {
+                    if cycle.contains(&checker.atom_number(head)) {
+                        if ls
+                            .iter()
+                            .filter(|l| l.is_positive())
+                            .map(|l| checker.atom_number(l.as_atom()))
+                            .any(|a| cycle.contains(&a))
+                        {
+                            pos.0.push(constraint.clone());
+                        } else {
+                            neg.0.push(constraint.clone());
+                        }
+                    }
+                }
+                Constraint::Fact(head) => {
+                    if cycle.contains(&checker.atom_number(head)) {
+                        neg.0.push(constraint.clone());
+                    }
+                }
+                Constraint::Integrity(..) => (),
+            }
+        }
+
+        (pos, neg)
+    }
+}
+
+#[cfg(test)]
+mod test_partition {
+    use super::*;
+
+    #[test]
+    fn lin_zhao_eg_text_p119() {
+        let p = Program::parse("a :- b. b :- a. a.").expect("valid parse");
+        let checker = Checker::new(&p).expect("valid program");
+
+        let graph = checker
+            .backrefs
+            .iter()
+            .enumerate()
+            .map(|(h, ls)| (h, ls.clone()))
+            .collect();
+        let circuits = find(&graph);
+        assert_eq!(circuits.len(), 1);
+
+        let (pos, neg) = p.loop_partition(&checker, &circuits[0]);
+
+        assert_eq!(pos.0.len(), 2);
+        if pos.0[0] != p.0[0] {
+            assert_eq!(pos.0[0], p.0[1]);
+            assert_eq!(pos.0[1], p.0[0]);
+        } else {
+            assert_eq!(pos.0[1], p.0[1]);
+        }
+        assert_eq!(neg.0.len(), 1);
+        assert_eq!(neg.0[0], p.0[2]);
+    }
+
+    #[test]
+    fn lin_zhao_eg1_p120() {
+        let p = Program::parse(concat!(
+            "a :- b. b :- a. a :- not c.\n",
+            "c :- d. d :- c. c :- not a."
+        ))
+        .expect("valid parse");
+        let checker = Checker::new(&p).expect("valid program");
+
+        let graph = checker
+            .backrefs
+            .iter()
+            .enumerate()
+            .map(|(h, ls)| (h, ls.clone()))
+            .collect();
+        let circuits = find(&graph);
+        assert_eq!(circuits.len(), 2);
+
+        // the asserts below are very much order dependent!!!
+
+        // circuit 0
+        let (pos, neg) = p.loop_partition(&checker, &circuits[0]);
+
+        assert_eq!(pos.0.len(), 2);
+        assert_eq!(pos.0[0], p.0[0]);
+        assert_eq!(pos.0[1], p.0[1]);
+        assert_eq!(neg.0.len(), 1);
+        assert_eq!(neg.0[0], p.0[2]);
+
+        // circuit 1
+        let (pos, neg) = p.loop_partition(&checker, &circuits[1]);
+
+        assert_eq!(pos.0.len(), 2);
+        assert_eq!(pos.0[0], p.0[3]);
+        assert_eq!(pos.0[1], p.0[4]);
+        assert_eq!(neg.0.len(), 1);
+        assert_eq!(neg.0[0], p.0[5]);
+    }
+}
+
 struct JohnsonsAlgorithm {
     b: HashMap<V, Vec<V>>,
     blocked: HashSet<V>,

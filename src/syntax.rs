@@ -2,25 +2,28 @@ use std::collections::HashSet;
 
 use crate::options::DEFAULT_WIDTH;
 
-lalrpop_mod!(#[allow(clippy::all)] parser);
+lalrpop_mod!(
+    #[allow(clippy::all)]
+    parser
+);
 
 #[derive(Debug)]
 pub struct Program(pub Vec<Constraint>);
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Constraint {
     Rule(Atom, Vec<Literal>),
     Fact(Atom),
     Integrity(Vec<Literal>),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Literal {
     Atom(Atom),
     Not(Atom),
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Atom {
     pub f: Symbol,
     pub args: Vec<SimpleTerm>,
